@@ -12,13 +12,16 @@ if __name__ == "__main__":
     fld = os.getcwd()
     print("\nEnter one of the task types 'tutorial' or 'official':")
     choice1=input()
+    choice1 = 'official' if choice1 == '' else choice1    
     print("\nEnter a name or id for the human agent:")
     choice2=input()
+    choice2='Bob' if choice2 == '' else choice2
     if choice1=='tutorial':
         builder = create_builder(task_type='tutorial',condition='tutorial', name=choice2, folder=fld)
     else:
         print("\nEnter one of the human conditions 'normal', 'strong', or 'weak':")
         choice3=input()
+        choice3='strong' if choice3 == '' else choice3
         if choice3=='normal' or choice3=='strong' or choice3=='weak':
             builder = create_builder(task_type=choice1, condition=choice3, name=choice2, folder=fld)
         else:
