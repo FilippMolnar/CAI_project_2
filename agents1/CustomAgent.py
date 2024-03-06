@@ -23,7 +23,7 @@ class OngoingTrustCheck(enum.Enum):
     # COMING_TO_SMALL_ROCK = 14, #  Waiting until agent arrives to see if small rock exists
     # COMING_TO_BIG_ROCK = 15 #  Waiting until agent arrives to see if big rock exists
 
-trust_answer_timeout = 5
+trust_answer_timeout = 7
 trust_arrive_timeout = 10
 trust_action_timeout = 10
 
