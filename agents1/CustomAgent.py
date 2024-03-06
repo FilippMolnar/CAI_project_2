@@ -24,8 +24,8 @@ class OngoingTrustCheck(enum.Enum):
     # COMING_TO_BIG_ROCK = 15 #  Waiting until agent arrives to see if big rock exists
 
 trust_answer_timeout = 7
-trust_arrive_timeout = 10
-trust_action_timeout = 10
+trust_arrive_timeout = 12
+trust_action_timeout = 15
 
 class CustomAgent(BaselineAgent):
 
@@ -779,6 +779,10 @@ class CustomAgent(BaselineAgent):
                                     
                                     # TRUST
                                     print("[Inform about victim] Victim was truly where human said it was")
+                                    if vic.split()[0] == 'mildly':
+                                        self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_RESCUE_MILD)
+                                    else:
+                                        self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_RESCUE_CRITICAL)
                                     self._updateCompetence(1)
 
                                     # Add the area to the list with searched areas
@@ -998,34 +1002,44 @@ class CustomAgent(BaselineAgent):
                         objects.append(info)
 
                         # HUMAN DID NOT ARRIVE - MILD
-                        if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_MILD and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= trust_arrive_timeout:
+                        if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_MILD and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= trust_arrive_timeout + trust_action_timeout:
                             # TRUST - Human did not arrive
-                            print("[Mild victim] Did not arrive in time")
+                            print("[Mild victim] Did not arrive or act in time")
                             self._updateWillingness(-1)
                             self._updateCompetence(-1)
                             self._trust_ongoing_check = OngoingTrustCheck.NONE
 
                             # IGNORED - Continue
+                            self._goal_vic = None
+                            self._goal_loc = None
+                            self._rescue = None
                             self._answered = True
                             self._waiting = False
+                            self._moving = True
                             self._todo.append(self._recent_vic)
                             self._recent_vic = None
                             self._phase = Phase.FIND_NEXT_GOAL
+                            return None, {}
 
                         # HUMAN DID NOT ARRIVE - CRITICAL
-                        if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_CRITICAL and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= trust_arrive_timeout:
+                        if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_CRITICAL and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= trust_arrive_timeout + trust_action_timeout:
                             # TRUST - Human did not arrive
-                            print("[Critical victim] Did not arrive in time")
+                            print("[Critical victim] Did not arrive or act in time")
                             self._updateWillingness(-2)
                             self._updateCompetence(-2)
                             self._trust_ongoing_check = OngoingTrustCheck.NONE
 
                             # IGNORED - Continue
+                            self._goal_vic = None
+                            self._goal_loc = None
+                            self._rescue = None
                             self._answered = True
                             self._waiting = False
+                            self._moving = True
                             self._todo.append(self._recent_vic)
                             self._recent_vic = None
                             self._phase = Phase.FIND_NEXT_GOAL
+                            return None, {}
                         
                         # Remain idle when the human has not arrived at the location
                         if not self._human_name in info['name']:
