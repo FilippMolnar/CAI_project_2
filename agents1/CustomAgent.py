@@ -2,33 +2,43 @@ from agents1.OfficialAgent import *
 
 
 class OngoingTrustCheck(enum.Enum):
-    INTRO = 1,
+    NONE = 1,
     FOUND_RESCUE_MILD = 2, # Waiting for human response
     WAITING_RESCUE_MILD = 3, # Waiting for human arrival
     CARRYING_RESCUE_MILD = 4, # Waiting if victim successfully carried to goal
-    FOUND_RESCUE_SEVERE = 5, # Waiting for human response
-    WAITING_RESCUE_SEVERE = 6, # Waiting for human arrival
-    CARRYING_RESCUE_SEVERE = 7, # Waiting if victim successfully carried to goal
+    FOUND_RESCUE_CRITICAL = 5, # Waiting for human response
+    WAITING_RESCUE_CRITICAL = 6, # Waiting for human arrival
+    CARRYING_RESCUE_CRITICAL = 7, # Waiting if victim successfully carried to goal
     FOUND_SMALL_ROCK = 8, # Waiting for human response
     WAITING_SMALL_ROCK = 9, # Waiting for human arrival
     FOUND_BIG_ROCK = 10, # Waiting for human response
     WAITING_BIG_ROCK = 11, # Waiting for human arrival
-    COMING_TO_RESCUE = 12, # Waiting until agent arrives to see if victim exists
-    COMING_TO_TREE = 13, # Waiting until agent arrives to see if tree exists
-    COMING_TO_SMALL_ROCK = 14, #  Waiting until agent arrives to see if small rock exists
-    COMING_TO_BIG_ROCK = 15 #  Waiting until agent arrives to see if big rock exists
+    FOUND_TREE = 12, # Waiting for human response
+    WAITING_TREE = 13, # Waiting for human arrival
+    COMING_TO_RESCUE_MILD = 14, # Waiting until agent arrives to see if victim exists
+    COMING_TO_RESCUE_CRITICAL = 15, # Waiting until agent arrives to see if victim exists
+    COMING_TO_OBSTACLE = 16
+    # Messages don't distinguish between obstacle types
+    # COMING_TO_TREE = 13, # Waiting until agent arrives to see if tree exists
+    # COMING_TO_SMALL_ROCK = 14, #  Waiting until agent arrives to see if small rock exists
+    # COMING_TO_BIG_ROCK = 15 #  Waiting until agent arrives to see if big rock exists
 
+trust_answer_timeout = 10
+trust_arrive_timeout = 20
+trust_action_timeout = 10
 
 class CustomAgent(BaselineAgent):
 
     def __init__(self, slowdown, condition, name, folder):
         super().__init__(slowdown, condition, name, folder)
+        self._trust_beliefs = {} # Current trust values
         self._trust_processed_messages = 0 # Number of processed messages the last time trust was updated
-        self._trust_ongoing_checks = [] # Past signalling that needs to be cross-checked with world information to update trust
+        self._trust_ongoing_check = OngoingTrustCheck.NONE # Past signalling that needs to be cross-checked with world information to update trust
         self._trust_willingness_total = 0 # Total wilingness score assigned to human
         self._trust_competence_total = 0 # Total competence score assigned to human
         self._trust_wilingness_interactions_count = 0 # Dictionary of #interactions with human influencing wilingness
         self._trust_competence_interactions_count = 0 # Dictionary of #interactions with human influencing competence
+        self._curr_tick = 0
 
         """
         Inherited fields (reminder for development)
@@ -45,156 +55,130 @@ class CustomAgent(BaselineAgent):
         
         """
 
+    def _updateWillingness(self, delta: int):
+        self._trust_willingness_total += delta
+        self._trust_wilingness_interactions_count += abs(delta) # To properly calculate weighted average
+
+        # Update willingness using the new weighted average
+        self._trust_beliefs['willingness'] = 0 if self._trust_wilingness_interactions_count == 0 else (self._trust_willingness_total / self._trust_wilingness_interactions_count)
+        # Clip values between -1 and 1
+        self._trust_beliefs['willingness'] = np.clip(self._trust_beliefs['willingness'], -1, 1)
+        print("Updated willingness (" + str(delta) + ") --- " + str(self._trust_beliefs['willingness']))
+
+    def _updateCompetence(self, delta: int):
+        self._trust_competence_total += delta
+        self._trust_competence_interactions_count += abs(delta) # To properly calculate weighted average
+
+        # Update competence using the new weighted average
+        self._trust_beliefs['competence'] = 0 if self._trust_competence_interactions_count == 0 else (self._trust_competence_total / self._trust_competence_interactions_count)
+        # Clip values between -1 and 1
+        self._trust_beliefs['competence'] = np.clip(self._trust_beliefs['competence'], -1, 1)
+        print("Updated competence (" + str(delta) + ") --- " + str(self._trust_beliefs['competence']))
+
     def _trustBelief(self, members, trustBeliefs, folder, receivedMessages):
-        def updateWillingness(delta: int):
-            self._trust_willingness_total += delta
-            self._trust_wilingness_interactions_count += 1
-
-        def updateCompetence(delta: int):
-            self._trust_competence_total += delta
-            self._trust_competence_interactions_count += 1
-                
-        
         # Process ongoing checks
-        if not self._trust_ongoing_checks: # This line is for debugging
-            for (start_tick, ongoing_check) in self._trust_ongoing_checks:
-                from worlds1.WorldBuilder import tick_duration
-                is_human_bad = (self._tick - start_tick) * tick_duration >= 20 # Check if 20s elapsed (tick_duration imported from WorldBuilder)
 
-                if ongoing_check == OngoingTrustCheck.FOUND_RESCUE_MILD:
-                    # ROBOT: “I need help with carrying a MILD victim”
-                        # Don’t respond in the next 20 seconds (-20% WILL)
-                        # Say “Remove Together”, but don’t come in next 20 seconds (-10% WILL, -10% COM)
-                        # Say “Remove Together”, come within 20 seconds, but stop carrying before finish (+10% WILL, -10% COM)
-                        # !!! this is bug, once a person is picked up software assumes that it is rescued
-                        # Say “Remove Together”, come within 20 seconds, and successfully rescue  (+10% WILL, +10% COM)
-                        # Say “Remove Alone” (0%)
-                        # Say “Continue” (0%)
-                    
-                    if is_human_bad:
-                        updateWillingness(-2)
-                    else:
-                        # Check messages
-                        pass
+        if self._trust_ongoing_check != OngoingTrustCheck.NONE:
+            from worlds1.WorldBuilder import tick_duration
 
-                if ongoing_check == OngoingTrustCheck.WAITING_RESCUE_MILD:
-                    if is_human_bad:
-                        updateWillingness(-1)
-                        updateCompetence(-1)
-                    else:
-                        # Check messages
-                        pass
+            start_tick = self._trust_ongoing_check[0]
+            location = self._trust_ongoing_check[1]
+            ongoing_check = self._trust_ongoing_check[2]
+
+            # time_since = (self._curr_tick - start_tick) * tick_duration >= trust_timeout # Check if trust_timeout elapsed (tick_duration imported from WorldBuilder)
+
+            # if ongoing_check == OngoingTrustCheck.FOUND_RESCUE_MILD:
+            #     # ROBOT: “I need help with carrying a MILD victim”
+            #         # Don’t respond in the next 20 seconds (-20% WILL)
+            #         # Say “Remove Together”, but don’t come in next 20 seconds (-10% WILL, -10% COM)
+            #         # Say “Remove Together”, come within 20 seconds, but stop carrying before finish (+10% WILL, -10% COM)
+            #         # !!! this is bug, once a person is picked up software assumes that it is rescued
+            #         # Say “Remove Together”, come within 20 seconds, and successfully rescue  (+10% WILL, +10% COM)
+            #         # Say “Remove Alone” (0%)
+            #         # Say “Continue” (0%)
                 
-                if ongoing_check == OngoingTrustCheck.CARRYING_RESCUE_MILD:
-                    # Needs to check if victim has been dropped - don't know how we will do this yet
-                    # On drop:
-                    # updateWillingness(1)
-                    # updateCompetence(-1)
-                    pass
+            #     if is_time_out:
+            #         self._updateWillingness(-2)
+            #         self._trust_ongoing_check = OngoingTrustCheck.NONE
 
-                if ongoing_check == OngoingTrustCheck.FOUND_RESCUE_SEVERE:
-                    # ROBOT: “I need help with carrying a RED person”
-                        # Same as yellow, but everything 2x, because RED people are more important
-                        # Say “Continue” (-20% WILL)
-                    if is_human_bad:
-                        updateWillingness(-4)
-                    else:
-                        # Check messages
-                        pass
+            # if ongoing_check == OngoingTrustCheck.WAITING_RESCUE_MILD:
+            #     if is_time_out:
+            #         self._updateWillingness(-1)
+            #         self._updateCompetence(-1)
+            #         self._trust_ongoing_check = OngoingTrustCheck.NONE
+            
+            # if ongoing_check == OngoingTrustCheck.CARRYING_RESCUE_MILD:
+            #     # Needs to check if victim has been dropped - don't know how we will do this yet
+            #     # On drop:
+            #     # self._updateWillingness(1)
+            #     # self._updateCompetence(-1)
+            #     pass
 
-                if ongoing_check == OngoingTrustCheck.WAITING_RESCUE_SEVERE:
-                    if is_human_bad:
-                        updateWillingness(-2)
-                        updateCompetence(-2)
-                    else:
-                        # Check messages
-                        pass
+            # if ongoing_check == OngoingTrustCheck.FOUND_RESCUE_CRITICAL:
+            #     # ROBOT: “I need help with carrying a RED person”
+            #         # Same as yellow, but everything 2x, because RED people are more important
+            #         # Say “Continue” (-20% WILL)
+            #     if is_time_out:
+            #         self._updateWillingness(-4)
+            #         self._trust_ongoing_check = OngoingTrustCheck.NONE
 
-                if ongoing_check == OngoingTrustCheck.CARRYING_RESCUE_SEVERE:
-                    # Needs to check if victim has been dropped - don't know how we will do this yet
-                    # On drop:
-                    # updateWillingness(2)
-                    # updateCompetence(-2)
-                    pass
+            # if ongoing_check == OngoingTrustCheck.WAITING_RESCUE_CRITICAL:
+            #     if is_time_out:
+            #         self._updateWillingness(-2)
+            #         self._updateCompetence(-2)
+            #         self._trust_ongoing_check = OngoingTrustCheck.NONE
 
-                if ongoing_check == OngoingTrustCheck.FOUND_SMALL_ROCK:
-                    # ROBOT: “Found KAMEN blocking area Y” 
-                        # Say “Remove together” (+10% WILL)
-                        # ak aj clovek pride a pomoze splnit (CLICK D remove together) do 20s tak (+10% COM)
-                        # ak nepride clovek (-10% COM)
-                        # Say “Remove Alone”  (-10% WILL)
-                        # Say “Continue” (-10% WILL)
-                    if is_human_bad:
-                        updateWillingness(-1)
-                    else:
-                        # Check messages
-                        pass
+            # if ongoing_check == OngoingTrustCheck.CARRYING_RESCUE_CRITICAL:
+            #     # Needs to check if victim has been dropped - don't know how we will do this yet
+            #     # On drop:
+            #     # self._updateWillingness(2)
+            #     # self._updateCompetence(-2)
+            #     pass
 
-                if ongoing_check == OngoingTrustCheck.WAITING_SMALL_ROCK:
-                    if is_human_bad:
-                        updateCompetence(-1)
-                    else:
-                        # Check messages
-                        pass
+            # if ongoing_check == OngoingTrustCheck.COMING_TO_RESCUE_MILD:
+            #     # HUMAN: “I found person X in area Y”
+            #     # Robot comes, information was correct (+10% COM, +10% WILL)
+            #     # Information was incorrect (-30% COM)
+            #     if True:
+            #         # CHECK IF INFORMATION TRUE
+            #         self._updateWillingness(2)
+            #         self._updateCompetence(2)
+            #         self._trust_ongoing_check = OngoingTrustCheck.NONE
+            #     if False:
+            #         # CHECK IF INFORMATION FALSE
+            #         self._updateCompetence(-3)
+            #         self._trust_ongoing_check = OngoingTrustCheck.NONE
 
-                if ongoing_check == OngoingTrustCheck.FOUND_BIG_ROCK:
-                    if is_human_bad:
-                        updateWillingness(-2)
-                    else:
-                        # Check messages
-                        pass
-                
-                if ongoing_check == OngoingTrustCheck.WAITING_BIG_ROCK:
-                    if is_human_bad:
-                        updateCompetence(-2)
-                    else:
-                        # Check messages
-                        pass
+            # if ongoing_check == OngoingTrustCheck.COMING_TO_RESCUE_CRITICAL:
+            #     # HUMAN: “I found person X in area Y”
+            #     # Robot comes, information was correct (+10% COM, +10% WILL)
+            #     # Information was incorrect (-30% COM)
+            #     if True:
+            #         # CHECK IF INFORMATION TRUE
+            #         self._updateWillingness(2)
+            #         self._updateCompetence(2)
+            #         self._trust_ongoing_check = OngoingTrustCheck.NONE
+            #     if False:
+            #         # CHECK IF INFORMATION FALSE
+            #         self._updateCompetence(-3)
+            #         self._trust_ongoing_check = OngoingTrustCheck.NONE
 
-                if ongoing_check == OngoingTrustCheck.COMING_TO_RESCUE:
-                    # HUMAN: “I found person X in area Y”
-                    # Robot comes, information was correct (+10% COM, +10% WILL)
-                    # Information was incorrect (-30% COM)
-                    if True:
-                        # CHECK IF INFORMATION TRUE
-                        updateWillingness(2)
-                        updateCompetence(2)
-                    if False:
-                        # CHECK IF INFORMATION FALSE
-                        updateCompetence(-3)
-                        
+            # if ongoing_check == OngoingTrustCheck.COMING_TO_OBSTACLE:
+            #     # HUMAN: “I want help with removing obstacle X in area Y”
+            #     # Robot comes, information was correct (+5% COM, +5% WILL)
+            #     # Information was incorrect (-10% COM)
+            #     # if next message is not “lets remove obstacle blocking area Y
+            #     if True:
+            #         # CHECK IF INFORMATION TRUE
+            #         self._updateWillingness(1)
+            #         self._updateCompetence(1)
+            #         self._trust_ongoing_check = OngoingTrustCheck.NONE
+            #     if False:
+            #         # CHECK IF INFORMATION FALSE
+            #         self._updateCompetence(-1)
+            #         self._trust_ongoing_check = OngoingTrustCheck.NONE
 
-                if ongoing_check == OngoingTrustCheck.COMING_TO_TREE:
-                    # HUMAN: “I want help with removing obstacle X in area Y”
-                    # Robot comes, information was correct (+5% COM, +5% WILL)
-                    # Information was incorrect (-10% COM)
-                    # if next message is not “lets remove obstacle blocking area Y
-                    if True:
-                        # CHECK IF INFORMATION TRUE
-                        updateWillingness(2)
-                        updateCompetence(2)
-                    if False:
-                        # CHECK IF INFORMATION FALSE
-                        updateCompetence(-2)
 
-                if ongoing_check == OngoingTrustCheck.COMING_TO_SMALL_ROCK:
-                    if True:
-                        # CHECK IF INFORMATION TRUE
-                        updateWillingness(1)
-                        updateCompetence(1)
-                    if False:
-                        # CHECK IF INFORMATION FALSE
-                        updateCompetence(-1)
-
-                if ongoing_check == OngoingTrustCheck.COMING_TO_BIG_ROCK:
-                    if True:
-                        # CHECK IF INFORMATION TRUE
-                        updateWillingness(2)
-                        updateCompetence(2)
-                    if False:
-                        # CHECK IF INFORMATION FALSE
-                        updateCompetence(-2)
-        
         # Process new messages
         if len(receivedMessages) > self._trust_processed_messages: # New messages received
             for msg in receivedMessages[self._trust_processed_messages:]:
@@ -213,6 +197,7 @@ class CustomAgent(BaselineAgent):
                         foundVic = msg.split()[1:4]
                     else:
                         foundVic = msg.split()[1:5]
+                    isCritical = foundVic[0] == "critically"
                     loc = msg.split()[-1]
 
                 if msg.startswith('Collect:'):
@@ -221,24 +206,28 @@ class CustomAgent(BaselineAgent):
                         collectVic = msg.split()[1:4]
                     else:
                         collectVic = msg.split()[1:5]
+                    isCritical = collectVic[0] == "critically"
                     loc = msg.split()[-1]
+                    if isCritical:
+                        self._trust_ongoing_check = (self._curr_tick, loc, OngoingTrustCheck.COMING_TO_RESCUE_CRITICAL)
+                    else:
+                        self._trust_ongoing_check = (self._curr_tick, loc, OngoingTrustCheck.COMING_TO_RESCUE_MILD)
 
                 if msg.startswith('Remove:'):
                     # Identify at which location the human needs help
                     area = msg.split()[-1]
-                    
-        # Finally, update competence and willingness using the new weighted averages
-        trustBeliefs[self._human_name]['competence'] = 0 if self._trust_competence_interactions_count == 0 else (self._trust_competence_total / self._trust_competence_interactions_count)
-        trustBeliefs[self._human_name]['willingness'] = 0 if self._trust_wilingness_interactions_count == 0 else (self._trust_willingness_total / self._trust_wilingness_interactions_count)
+                    self._trust_ongoing_check = (self._curr_tick, area, OngoingTrustCheck.COMING_TO_OBSTACLE)
 
-        # Clip values between -1 and 1
-        trustBeliefs[self._human_name]['competence'] = np.clip(trustBeliefs[self._human_name]['competence'], -1, 1)
-        trustBeliefs[self._human_name]['willingness'] = np.clip(trustBeliefs[self._human_name]['willingness'], -1, 1)
+
+            self._trust_processed_messages = len(receivedMessages)
 
         return trustBeliefs
     
 
     def decide_on_actions(self, state):
+        from worlds1.WorldBuilder import tick_duration
+        self._curr_tick = state['World']['nr_ticks']
+
         # Identify team members
         agent_name = state[self.agent_id]['obj_id']
         for member in state['World']['team_members']:
@@ -521,6 +510,7 @@ class CustomAgent(BaselineAgent):
                 agent_location = state[self.agent_id]['location']
                 # Identify which obstacle is blocking the entrance
                 for info in state.values():
+                    # BIG ROCK
                     if 'class_inheritance' in info and 'ObstacleObject' in info['class_inheritance'] and 'rock' in info[
                         'obj_id']:
                         objects.append(info)
@@ -533,7 +523,25 @@ class CustomAgent(BaselineAgent):
                                 \n clock - removal time: 5 seconds \n afstand - distance between us: ' + self._distance_human,
                                               'RescueBot')
                             self._waiting = True
-                            # Determine the next area to explore if the human tells the agent not to remove the obstacle
+
+                            # TRUST - Set ongoing status
+                            self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.FOUND_BIG_ROCK)
+                        
+                        # HUMAN IGNORES FOR trust_answer_timeout
+                        if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._answered == False and not self._remove and self._waiting and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= trust_answer_timeout:
+                            # TRUST - Human ignored question. Lower willingness.
+                            self._updateWillingness(-2)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
+
+                            # IGNORED - Continue
+                            self._answered = True
+                            self._waiting = False
+                            # Add area to the to do list
+                            self._to_search.append(self._door['room_name'])
+                            self._phase = Phase.FIND_NEXT_GOAL
+
+
+                        # Determine the next area to explore if the human tells the agent not to remove the obstacle
                         if self.received_messages_content and self.received_messages_content[
                             -1] == 'Continue' and not self._remove:
                             self._answered = True
@@ -541,6 +549,11 @@ class CustomAgent(BaselineAgent):
                             # Add area to the to do list
                             self._to_search.append(self._door['room_name'])
                             self._phase = Phase.FIND_NEXT_GOAL
+
+                            # TRUST - Remove ongoing check
+                            self._updateWillingness(0)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
+
                         # Wait for the human to help removing the obstacle and remove the obstacle together
                         if self.received_messages_content and self.received_messages_content[
                             -1] == 'Remove' or self._remove:
@@ -550,16 +563,38 @@ class CustomAgent(BaselineAgent):
                             if not state[{'is_human_agent': True}]:
                                 self._send_message('Please come to ' + str(self._door['room_name']) + ' to remove rock.',
                                                   'RescueBot')
+                                # TRUST - Update ongoing check
+                                self._updateWillingness(1)
+                                self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_BIG_ROCK)
                                 return None, {}
+                            
                             # Tell the human to remove the obstacle when he/she arrives
                             if state[{'is_human_agent': True}]:
                                 self._send_message('Lets remove rock blocking ' + str(self._door['room_name']) + '!',
                                                   'RescueBot')
+                                # TRUST - Update ongoing check
+                                self._updateWillingness(1)
+                                self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_BIG_ROCK)
                                 return None, {}
-                        # Remain idle untill the human communicates what to do with the identified obstacle 
+
+                        if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_BIG_ROCK and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= trust_arrive_timeout:
+                            # TRUST - Human did not arrive
+                            self._updateCompetence(-1)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
+
+                            # IGNORED - Continue
+                            self._answered = True
+                            self._waiting = False
+                            # Add area to the to do list
+                            self._to_search.append(self._door['room_name'])
+                            self._phase = Phase.FIND_NEXT_GOAL
+                            
+                        # Remain idle until the human communicates what to do with the identified obstacle 
                         else:
                             return None, {}
 
+                    
+                    # TREE
                     if 'class_inheritance' in info and 'ObstacleObject' in info['class_inheritance'] and 'tree' in info[
                         'obj_id']:
                         objects.append(info)
@@ -571,6 +606,23 @@ class CustomAgent(BaselineAgent):
                                 self._searched_rooms).replace('area ', '') + ' \
                                 \n clock - removal time: 10 seconds', 'RescueBot')
                             self._waiting = True
+
+                            # TRUST - Set ongoing status
+                            self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.FOUND_TREE)
+                        
+                        # HUMAN IGNORES FOR trust_answer_timeout
+                        if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._answered == False and not self._remove and self._waiting and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= trust_answer_timeout:
+                            # TRUST - Human ignored question. Lower willingness.
+                            self._updateWillingness(-2)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
+
+                            # IGNORED - Continue
+                            self._answered = True
+                            self._waiting = False
+                            # Add area to the to do list
+                            self._to_search.append(self._door['room_name'])
+                            self._phase = Phase.FIND_NEXT_GOAL
+                        
                         # Determine the next area to explore if the human tells the agent not to remove the obstacle
                         if self.received_messages_content and self.received_messages_content[
                             -1] == 'Continue' and not self._remove:
@@ -579,9 +631,19 @@ class CustomAgent(BaselineAgent):
                             # Add area to the to do list
                             self._to_search.append(self._door['room_name'])
                             self._phase = Phase.FIND_NEXT_GOAL
+
+                            # TRUST - Remove ongoing check
+                            self._updateWillingness(0)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
+
                         # Remove the obstacle if the human tells the agent to do so
                         if self.received_messages_content and self.received_messages_content[
                             -1] == 'Remove' or self._remove:
+
+                            # Update ongoing check
+                            self._updateWillingness(1)
+                            self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_TREE)
+
                             if not self._remove:
                                 self._answered = True
                                 self._waiting = False
@@ -594,9 +656,11 @@ class CustomAgent(BaselineAgent):
                             self._remove = False
                             return RemoveObject.__name__, {'object_id': info['obj_id']}
                         # Remain idle untill the human communicates what to do with the identified obstacle
+
                         else:
                             return None, {}
 
+                    # SMALL ROCK
                     if 'class_inheritance' in info and 'ObstacleObject' in info['class_inheritance'] and 'stone' in \
                             info['obj_id']:
                         objects.append(info)
@@ -609,6 +673,23 @@ class CustomAgent(BaselineAgent):
                                 \n clock - removal time together: 3 seconds \n afstand - distance between us: ' + self._distance_human + '\n clock - removal time alone: 20 seconds',
                                               'RescueBot')
                             self._waiting = True
+
+                            # TRUST - Set ongoing status
+                            self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.FOUND_SMALL_ROCK)
+
+                        # HUMAN IGNORES FOR trust_answer_timeout
+                        if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._answered == False and not self._remove and self._waiting and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= trust_answer_timeout:
+                            # TRUST - Human ignored question. Lower willingness.
+                            self._updateWillingness(-1)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
+
+                            # IGNORED - Continue
+                            self._answered = True
+                            self._waiting = False
+                            # Add area to the to do list
+                            self._to_search.append(self._door['room_name'])
+                            self._phase = Phase.FIND_NEXT_GOAL
+
                         # Determine the next area to explore if the human tells the agent not to remove the obstacle          
                         if self.received_messages_content and self.received_messages_content[
                             -1] == 'Continue' and not self._remove:
@@ -617,9 +698,19 @@ class CustomAgent(BaselineAgent):
                             # Add area to the to do list
                             self._to_search.append(self._door['room_name'])
                             self._phase = Phase.FIND_NEXT_GOAL
+
+                            # TRUST - Remove ongoing check
+                            self._updateWillingness(0)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
+
                         # Remove the obstacle alone if the human decides so
                         if self.received_messages_content and self.received_messages_content[
                             -1] == 'Remove alone' and not self._remove:
+
+                            # TRUST - Remove ongoing check
+                            self._updateWillingness(-1)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
+
                             self._answered = True
                             self._waiting = False
                             self._send_message('Removing stones blocking ' + str(self._door['room_name']) + '.',
@@ -630,6 +721,7 @@ class CustomAgent(BaselineAgent):
                         # Remove the obstacle together if the human decides so
                         if self.received_messages_content and self.received_messages_content[
                             -1] == 'Remove together' or self._remove:
+
                             if not self._remove:
                                 self._answered = True
                             # Tell the human to come over and be idle untill human arrives
@@ -637,12 +729,31 @@ class CustomAgent(BaselineAgent):
                                 self._send_message(
                                     'Please come to ' + str(self._door['room_name']) + ' to remove stones together.',
                                     'RescueBot')
+                                # TRUST - Update ongoing check
+                                self._updateWillingness(1)
+                                self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_SMALL_ROCK)
                                 return None, {}
                             # Tell the human to remove the obstacle when he/she arrives
                             if state[{'is_human_agent': True}]:
                                 self._send_message('Lets remove stones blocking ' + str(self._door['room_name']) + '!',
                                                   'RescueBot')
+                                # TRUST - Update ongoing check
+                                self._updateWillingness(1)
+                                self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_SMALL_ROCK)
                                 return None, {}
+
+                        if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_SMALL_ROCK and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= trust_arrive_timeout:
+                            # TRUST - Human did not arrive
+                            self._updateCompetence(-1)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
+
+                            # IGNORED - Continue
+                            self._answered = True
+                            self._waiting = False
+                            # Add area to the to do list
+                            self._to_search.append(self._door['room_name'])
+                            self._phase = Phase.FIND_NEXT_GOAL
+
                         # Remain idle until the human communicates what to do with the identified obstacle
                         else:
                             return None, {}
@@ -652,6 +763,18 @@ class CustomAgent(BaselineAgent):
                     self._remove = False
                     self._waiting = False
                     self._phase = Phase.ENTER_ROOM
+
+                    # TRUST - if object successfully removed together, improve trust
+                    if self._trust_ongoing_check != OngoingTrustCheck.NONE:
+                        if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_SMALL_ROCK:
+                            self._updateCompetence(1)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
+                        if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_BIG_ROCK:
+                            self._updateCompetence(2)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
+                        if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_TREE:
+                            self._updateCompetence(2)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
 
             if Phase.ENTER_ROOM == self._phase:
                 self._answered = False
