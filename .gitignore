@@ -1,0 +1,4 @@
+./worlds1/__pycache__
+logs/*
+./loggers/__pycache__
+*.pyc

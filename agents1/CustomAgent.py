@@ -46,7 +46,8 @@ class CustomAgent(BaselineAgent):
         self._trust_all_zones_marked_visited = False # When the robot has to search zones again even though human said everything is searched, start counting wrongly marked zones
         self._trust_zones_wrongly_marked_as_searched = [] 
         self._curr_tick = 0
-
+        self._trust_beliefs['willingness'] = 0
+        self._trust_beliefs['competence'] = 0
         """
         Inherited fields (reminder for development)
 
@@ -71,6 +72,7 @@ class CustomAgent(BaselineAgent):
         # Clip values between -1 and 1
         self._trust_beliefs['willingness'] = np.clip(self._trust_beliefs['willingness'], -1, 1)
         print("Updated willingness (Change: " + str(delta) + "). New value: " + str(self._trust_beliefs['willingness']))
+        self.writeCurrCsv(self._human_name, self._trust_beliefs, self._folder)
 
     def _updateCompetence(self, delta: int):
         self._trust_competence_total += delta
@@ -81,7 +83,21 @@ class CustomAgent(BaselineAgent):
         # Clip values between -1 and 1
         self._trust_beliefs['competence'] = np.clip(self._trust_beliefs['competence'], -1, 1)
         print("Updated competence (Change: " + str(delta) + "). New value: " + str(self._trust_beliefs['competence']))
+        self.writeCurrCsv(self._human_name, self._trust_beliefs, self._folder)
 
+    def writeCurrCsv(self, name, trust_beliefs, folder):
+        # Save current trust belief values so we can later use and retrieve them to add to a csv file with all the logged trust belief values
+        print("human_name:", name)
+        print("competence: ",trust_beliefs['competence'])
+        print("willingness",trust_beliefs['willingness'])
+
+        with open(folder + '/beliefs/currentTrustBelief.csv', mode='w') as csv_file:
+            csv_writer = csv.writer(csv_file, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            csv_writer.writerow(['name', 'competence', 'willingness'])
+            csv_writer.writerow([name, trust_beliefs['competence'], trust_beliefs['willingness']])
+
+        return trust_beliefs
+    
     def _trustBelief(self, members, trustBeliefs, folder, receivedMessages):
         # Process new messages
         if len(receivedMessages) > self._trust_processed_messages: # New messages received
