@@ -27,9 +27,12 @@ trust_answer_timeout = 7
 trust_arrive_timeout = 12
 trust_action_timeout = 15
 
+tree_willingness_threshold = -0.25
 small_rock_willingness_threshold = -0.5
-big_rock_willingness_threshold = -0.5
+big_rock_willingness_threshold = -0.75
+
 mild_victim_willingness_threshold = -0.5
+critical_victim_willingness_threshold = -0.9
 
 
 class CustomAgent(BaselineAgent):
@@ -100,46 +103,46 @@ class CustomAgent(BaselineAgent):
     
     def _trustBelief(self, members, trustBeliefs, folder, receivedMessages):
         # Process new messages
-        if len(receivedMessages) > self._trust_processed_messages: # New messages received
-            for msg in receivedMessages[self._trust_processed_messages:]:
-                # Revert 
-                if msg.startswith("Search:"):
-                    area = msg.split()[-1]
-                elif msg.startswith("Found:"):
-                    # Identify which victim and area it concerns
-                    if len(msg.split()) == 6:
-                        foundVic = msg.split()[1:4]
-                    else:
-                        foundVic = msg.split()[1:5]
-                    isCritical = foundVic[0] == "critically"
-                    loc = msg.split()[-1]
-                elif msg.startswith('Collect:'):
-                    # Identify which victim and area it concerns
-                    if len(msg.split()) == 6:
-                        collectVic = msg.split()[1:4]
-                    else:
-                        collectVic = msg.split()[1:5]
-                    isCritical = collectVic[0] == "critically"
-                    loc = msg.split()[-1]
-                elif msg.startswith('Remove:'):
-                    # Identify at which location the human needs help
-                    area = msg.split()[-1]
-                    # HUMAN ASKING FOR HELP - REVERT TRUST IMPROVEMENTS FROM ONGOING AGREEMENTS
-                    if self._trust_ongoing_check != OngoingTrustCheck.NONE:
-                        if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_SMALL_ROCK:
-                            print("[Small rock] Revert willingness improvement for agreeing to remove together due to prioritization of another task")
-                            self._updateWillingness(-1)
-                        if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_BIG_ROCK:
-                            print("[Big rock] Revert willingness improvement for agreeing to remove together due to prioritization of another task")
-                            self._updateWillingness(-1)
-                        if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_MILD:
-                            print("[Mild victim] Revert willingness improvement for agreeing to remove together due to prioritization of another task")
-                            self._updateWillingness(0) # No improvement for just agreeing, so no revert
-                        if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_CRITICAL:
-                            print("[Critical victim] Revert willingness improvement for agreeing to remove together due to prioritization of another task")
-                            self._updateWillingness(0) # No improvement for just agreeing, so no revert
+        # if len(receivedMessages) > self._trust_processed_messages: # New messages received
+        #     for msg in receivedMessages[self._trust_processed_messages:]:
+        #         # Revert 
+        #         if msg.startswith("Search:"):
+        #             area = msg.split()[-1]
+        #         elif msg.startswith("Found:"):
+        #             # Identify which victim and area it concerns
+        #             if len(msg.split()) == 6:
+        #                 foundVic = msg.split()[1:4]
+        #             else:
+        #                 foundVic = msg.split()[1:5]
+        #             isCritical = foundVic[0] == "critically"
+        #             loc = msg.split()[-1]
+        #         elif msg.startswith('Collect:'):
+        #             # Identify which victim and area it concerns
+        #             if len(msg.split()) == 6:
+        #                 collectVic = msg.split()[1:4]
+        #             else:
+        #                 collectVic = msg.split()[1:5]
+        #             isCritical = collectVic[0] == "critically"
+        #             loc = msg.split()[-1]
+        #         elif msg.startswith('Remove:'):
+        #             # Identify at which location the human needs help
+        #             area = msg.split()[-1]
+        #             # HUMAN ASKING FOR HELP - REVERT TRUST IMPROVEMENTS FROM ONGOING AGREEMENTS
+        #             if self._trust_ongoing_check != OngoingTrustCheck.NONE:
+        #                 if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_SMALL_ROCK:
+        #                     print("[Small rock] Revert willingness improvement for agreeing to remove together due to prioritization of another task")
+        #                     self._updateWillingness(-1)
+        #                 if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_BIG_ROCK:
+        #                     print("[Big rock] Revert willingness improvement for agreeing to remove together due to prioritization of another task")
+        #                     self._updateWillingness(-1)
+        #                 if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_MILD:
+        #                     print("[Mild victim] Revert willingness improvement for agreeing to remove together due to prioritization of another task")
+        #                     self._updateWillingness(0) # No improvement for just agreeing, so no revert
+        #                 if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_CRITICAL:
+        #                     print("[Critical victim] Revert willingness improvement for agreeing to remove together due to prioritization of another task")
+        #                     self._updateWillingness(0) # No improvement for just agreeing, so no revert
 
-            self._trust_processed_messages = len(receivedMessages)
+        #     self._trust_processed_messages = len(receivedMessages)
 
         return trustBeliefs
     
@@ -444,6 +447,20 @@ class CustomAgent(BaselineAgent):
                     if 'class_inheritance' in info and 'ObstacleObject' in info['class_inheritance'] and 'rock' in info[
                         'obj_id']:
                         objects.append(info)
+
+                        # DECISION: Continue, if willingness too low
+                        if self._trust_beliefs['willingness'] < big_rock_willingness_threshold:
+                            self._answered = True
+                            self._waiting = False
+                            # Add area to the to do list
+                            self._to_search.append(self._door['room_name'])
+                            self._phase = Phase.FIND_NEXT_GOAL
+
+                            # TRUST - Remove ongoing check
+                            print("[Big rock] Forced Continue")
+                            self._updateWillingness(0)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
+
                         # Communicate which obstacle is blocking the entrance
                         if self._answered == False and not self._remove and not self._waiting:
                             self._send_message('Found rock blocking ' + str(self._door['room_name']) + '. Please decide whether to "Remove" or "Continue" searching. \n \n \
@@ -498,7 +515,7 @@ class CustomAgent(BaselineAgent):
 
                             # TRUST - Remove ongoing check
                             print("[Big rock] Continue")
-                            self._updateWillingness(0)
+                            self._updateWillingness(-0.5)
                             self._trust_ongoing_check = OngoingTrustCheck.NONE
 
                         # Wait for the human to help removing the obstacle and remove the obstacle together
@@ -532,6 +549,22 @@ class CustomAgent(BaselineAgent):
                     if 'class_inheritance' in info and 'ObstacleObject' in info['class_inheritance'] and 'tree' in info[
                         'obj_id']:
                         objects.append(info)
+
+                        # DECISION: Remove automatically, if willingness too low
+                        if self._trust_beliefs['willingness'] < tree_willingness_threshold:
+                            # Update ongoing check
+                            print("[Tree] Forced removal")
+                            self._updateWillingness(0)
+                            self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_TREE)
+
+                            self._answered = True
+                            self._waiting = False
+                            self._send_message('Removing tree blocking ' + str(self._door['room_name']) + '.',
+                                            'RescueBot')
+                            self._phase = Phase.ENTER_ROOM
+                            self._remove = False
+                            return RemoveObject.__name__, {'object_id': info['obj_id']}
+
                         # Communicate which obstacle is blocking the entrance
                         if self._answered == False and not self._remove and not self._waiting:
                             self._send_message('Found tree blocking  ' + str(self._door['room_name']) + '. Please decide whether to "Remove" or "Continue" searching. \n \n \
@@ -569,7 +602,7 @@ class CustomAgent(BaselineAgent):
 
                             # TRUST - Remove ongoing check
                             print("[Tree] Continue")
-                            self._updateWillingness(0)
+                            self._updateWillingness(-0.5)
                             self._trust_ongoing_check = OngoingTrustCheck.NONE
 
                         # Remove the obstacle if the human tells the agent to do so
@@ -578,7 +611,7 @@ class CustomAgent(BaselineAgent):
 
                             # Update ongoing check
                             print("[Tree] Confirmed removal")
-                            self._updateWillingness(1)
+                            self._updateWillingness(0)
                             self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_TREE)
 
                             if not self._remove:
@@ -601,6 +634,26 @@ class CustomAgent(BaselineAgent):
                     if 'class_inheritance' in info and 'ObstacleObject' in info['class_inheritance'] and 'stone' in \
                             info['obj_id']:
                         objects.append(info)
+
+                        # DECISION: Remove automatically, if willingness too low
+                        if self._trust_beliefs['willingness'] < small_rock_willingness_threshold:
+                            print("DATA:")
+                            print(self._trust_beliefs['willingness'])
+                            print(small_rock_willingness_threshold)
+                            print(self._trust_beliefs['willingness'] < small_rock_willingness_threshold)
+                            # TRUST - Remove ongoing check
+                            print("[Small rock] Forced removal alone")
+                            self._updateWillingness(0)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
+
+                            self._answered = True
+                            self._waiting = False
+                            self._send_message('Removing stones blocking ' + str(self._door['room_name']) + '.',
+                                              'RescueBot')
+                            self._phase = Phase.ENTER_ROOM
+                            self._remove = False
+                            return RemoveObject.__name__, {'object_id': info['obj_id']}
+
                         # Communicate which obstacle is blocking the entrance
                         if self._answered == False and not self._remove and not self._waiting:
                             self._send_message('Found stones blocking  ' + str(self._door['room_name']) + '. Please decide whether to "Remove together", "Remove alone", or "Continue" searching. \n \n \
@@ -655,7 +708,7 @@ class CustomAgent(BaselineAgent):
 
                             # TRUST - Remove ongoing check
                             print("[Small rock] Continue")
-                            self._updateWillingness(0)
+                            self._updateWillingness(-0.5)
                             self._trust_ongoing_check = OngoingTrustCheck.NONE
 
                         # Remove the obstacle alone if the human decides so
@@ -829,24 +882,53 @@ class CustomAgent(BaselineAgent):
 
                                 # Communicate which victim the agent found and ask the human whether to rescue the victim now or at a later stage
                                 if 'mild' in vic and self._answered == False and not self._waiting:
-                                    self._send_message('Found ' + vic + ' in ' + self._door['room_name'] + '. Please decide whether to "Rescue together", "Rescue alone", or "Continue" searching. \n \n \
-                                        Important features to consider are: \n safe - victims rescued: ' + str(
-                                        self._collected_victims) + '\n explore - areas searched: area ' + str(
-                                        self._searched_rooms).replace('area ', '') + '\n \
-                                        clock - extra time when rescuing alone: 15 seconds \n afstand - distance between us: ' + self._distance_human,
-                                                      'RescueBot')
-                                    self._waiting = True
-                                    self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.FOUND_RESCUE_MILD)
+                                    # DECISION: Rescue mild victim alone, if willingness too low
+                                    if self._trust_beliefs['willingness'] < mild_victim_willingness_threshold:
+                                        self._send_message('Picking up ' + self._recent_vic + ' in ' + self._door['room_name'] + '.',
+                                                        'RescueBot')
+                                        # TRUST
+                                        print("[Mild victim] Forced rescue alone")
+                                        self._updateWillingness(0)
+
+                                        self._rescue = 'alone'
+                                        self._answered = True
+                                        self._waiting = False
+                                        self._goal_vic = self._recent_vic
+                                        self._goal_loc = self._remaining[self._goal_vic]
+                                        self._recent_vic = None
+                                        self._phase = Phase.PLAN_PATH_TO_VICTIM
+                                    
+                                    else:
+                                        self._send_message('Found ' + vic + ' in ' + self._door['room_name'] + '. Please decide whether to "Rescue together", "Rescue alone", or "Continue" searching. \n \n \
+                                            Important features to consider are: \n safe - victims rescued: ' + str(
+                                            self._collected_victims) + '\n explore - areas searched: area ' + str(
+                                            self._searched_rooms).replace('area ', '') + '\n \
+                                            clock - extra time when rescuing alone: 15 seconds \n afstand - distance between us: ' + self._distance_human,
+                                                        'RescueBot')
+                                        self._waiting = True
+                                        self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.FOUND_RESCUE_MILD)
 
                                 if 'critical' in vic and self._answered == False and not self._waiting:
-                                    self._send_message('Found ' + vic + ' in ' + self._door['room_name'] + '. Please decide whether to "Rescue" or "Continue" searching. \n\n \
-                                        Important features to consider are: \n explore - areas searched: area ' + str(
-                                        self._searched_rooms).replace('area',
-                                                                      '') + ' \n safe - victims rescued: ' + str(
-                                        self._collected_victims) + '\n \
-                                        afstand - distance between us: ' + self._distance_human, 'RescueBot')
-                                    self._waiting = True
-                                    self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.FOUND_RESCUE_CRITICAL)
+                                    # DECISION: Rescue mild victim alone, if willingness too low
+                                    if self._trust_beliefs['willingness'] < critical_victim_willingness_threshold:
+                                        print("[Critical victim] Forced continue")
+                                        self._updateWillingness(0)
+
+                                        self._answered = True
+                                        self._waiting = False
+                                        self._todo.append(self._recent_vic)
+                                        self._recent_vic = None
+                                        self._phase = Phase.FIND_NEXT_GOAL
+
+                                    else:
+                                        self._send_message('Found ' + vic + ' in ' + self._door['room_name'] + '. Please decide whether to "Rescue" or "Continue" searching. \n\n \
+                                            Important features to consider are: \n explore - areas searched: area ' + str(
+                                            self._searched_rooms).replace('area',
+                                                                        '') + ' \n safe - victims rescued: ' + str(
+                                            self._collected_victims) + '\n \
+                                            afstand - distance between us: ' + self._distance_human, 'RescueBot')
+                                        self._waiting = True
+                                        self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.FOUND_RESCUE_CRITICAL)
 
                                     # Execute move actions to explore the area
                     return action, {}
@@ -879,6 +961,9 @@ class CustomAgent(BaselineAgent):
                     self._waiting = False
                     # TRUST
                     self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_RESCUE_CRITICAL)
+                    print("[Critical victim] Trying to rescue together")
+                    self._updateWillingness(2)
+
                     # Tell the human to come over and help carry the critically injured victim
                     if not state[{'is_human_agent': True}]:
                         self._send_message('Please come to ' + str(self._door['room_name']) + ' to carry ' + str(
@@ -899,6 +984,9 @@ class CustomAgent(BaselineAgent):
                     self._waiting = False
                     # TRUST
                     self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_RESCUE_MILD)
+                    print("[Mild victim] Trying to rescue together")
+                    self._updateWillingness(1)
+
                     # Tell the human to come over and help carry the mildly injured victim
                     if not state[{'is_human_agent': True}]:
                         self._send_message('Please come to ' + str(self._door['room_name']) + ' to carry ' + str(
@@ -918,7 +1006,7 @@ class CustomAgent(BaselineAgent):
                                       'RescueBot')
                     # TRUST
                     print("[Mild victim] Rescue alone")
-                    self._updateWillingness(0)
+                    self._updateWillingness(-1)
 
                     self._rescue = 'alone'
                     self._answered = True
@@ -930,8 +1018,12 @@ class CustomAgent(BaselineAgent):
                 # Continue searching other areas if the human decides so
                 if self.received_messages_content and self.received_messages_content[-1] == 'Continue':
                     # TRUST
-                    print("[Mild victim] Continue")
-                    self._updateWillingness(0)
+                    if 'mild' in self._recent_vic:
+                        print("[Mild victim] Continue")
+                        self._updateWillingness(-1)
+                    else:
+                        print("[Critical victim] Continue")
+                        self._updateWillingness(-2)
 
                     self._answered = True
                     self._waiting = False
@@ -968,7 +1060,7 @@ class CustomAgent(BaselineAgent):
                     #     self._todo.append(self._recent_vic)
                     #     self._recent_vic = None
                     #     self._phase = Phase.FIND_NEXT_GOAL
-                    # return None, {}
+                    return None, {}
                 # Find the next area to search when the agent is not waiting for an answer from the human or occupied with rescuing a victim
                 if not self._waiting and not self._rescue:
                     self._recent_vic = None
@@ -1073,11 +1165,9 @@ class CustomAgent(BaselineAgent):
                     if self._trust_ongoing_check != OngoingTrustCheck.NONE:
                         if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_MILD:
                             print("[Mild victim] Rescued together") # Assuming the game can't let you drop it outside goal
-                            self._updateWillingness(1)
                             self._updateCompetence(1)
                         elif self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_CRITICAL:
                             print("[Critical victim] Rescued together") # Assuming the game can't let you drop it outside goal
-                            self._updateWillingness(2)
                             self._updateCompetence(2)
                     self._waiting = False
                     if self._goal_vic not in self._collected_victims:
