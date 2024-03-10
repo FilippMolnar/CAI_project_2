@@ -18,10 +18,6 @@ class OngoingTrustCheck(enum.Enum):
     COMING_TO_RESCUE_MILD = 14, # Waiting until agent arrives to see if victim exists
     COMING_TO_RESCUE_CRITICAL = 15, # Waiting until agent arrives to see if victim exists
     COMING_TO_OBSTACLE = 16
-    # Messages don't distinguish between obstacle types
-    # COMING_TO_TREE = 13, # Waiting until agent arrives to see if tree exists
-    # COMING_TO_SMALL_ROCK = 14, #  Waiting until agent arrives to see if small rock exists
-    # COMING_TO_BIG_ROCK = 15 #  Waiting until agent arrives to see if big rock exists
 
 trust_answer_timeout_lower_bound = 15
 trust_answer_timeout_upper_bound = 30
@@ -45,27 +41,24 @@ class CustomAgent(BaselineAgent):
         self._trust_ongoing_check = OngoingTrustCheck.NONE # Past signalling that needs to be cross-checked with world information to update trust
         self._trust_willingness_total = 0 # Total wilingness score assigned to human
         self._trust_competence_total = 0 # Total competence score assigned to human
-        self._trust_wilingness_interactions_count = 3 # Dictionary of #interactions with human influencing wilingness
-        self._trust_competence_interactions_count = 3 # Dictionary of #interactions with human influencing competence
+        self._trust_willingness_interactions_count = 3 # Sum of magnitudes of willingness changes (set to non-zero for benefit of the doubt in the beginning)
+        self._trust_competence_interactions_count = 3 # Sum of magnitudes of competence changes (set to non-zero for benefit of the doubt in the beginning)
         self._trust_all_zones_marked_visited = False # When the robot has to search zones again even though human said everything is searched, start counting wrongly marked zones
         self._trust_zones_wrongly_marked_as_searched = []
         self._curr_tick = 0
-        self._trust_beliefs['willingness'] = 0
         self._trust_beliefs['competence'] = 0
-        """
-        Inherited fields (reminder for development)
+        self._trust_beliefs['willingness'] = 0
+        with open(folder + '/beliefs/allTrustBeliefs.csv', mode='r') as f:
+            reader = csv.reader(f) 
+            for r in reader:
+                if len(r) <= 0:
+                    continue
+                row = r[0].split(';') 
+                if row[0] == name:
+                    self._trust_beliefs['competence'] = float(row[1])
+                    self._trust_beliefs['willingness'] = float(row[2])
+                    break
 
-        self._answered = False
-        self._carrying = False
-        self._waiting = False
-        self._carrying_together = False
-        self._remove = False
-        self._current_door = None
-        self._phase
-        self._found_victim_logs = {}
-        self._human_loc  - Important! (Likely) Last location human self-reported
-        
-        """
 
     def interpolWillingness(self, l, u):
         delta = u - l
@@ -74,12 +67,11 @@ class CustomAgent(BaselineAgent):
 
     def _updateWillingness(self, delta: int):
         self._trust_willingness_total += delta
-        self._trust_wilingness_interactions_count += abs(delta) # To properly calculate weighted average
+        self._trust_willingness_interactions_count += abs(delta) # To properly calculate weighted average
 
         # Update willingness using the new weighted average
-        self._trust_beliefs['willingness'] = 0 if self._trust_wilingness_interactions_count == 0 else (self._trust_willingness_total / self._trust_wilingness_interactions_count)
-        # Clip values between -1 and 1
-        self._trust_beliefs['willingness'] = np.clip(self._trust_beliefs['willingness'], -1, 1)
+        self._trust_beliefs['willingness'] = 0 if self._trust_willingness_interactions_count == 0 else (self._trust_willingness_total / self._trust_willingness_interactions_count)
+
         print("Updated willingness (Change: " + str(delta) + "). New value: " + str(self._trust_beliefs['willingness']))
         
         self.writeCurrCsv(self._human_name, self._trust_beliefs, self._folder)
@@ -92,9 +84,9 @@ class CustomAgent(BaselineAgent):
 
         # Update competence using the new weighted average
         self._trust_beliefs['competence'] = 0 if self._trust_competence_interactions_count == 0 else (self._trust_competence_total / self._trust_competence_interactions_count)
-        # Clip values between -1 and 1
-        self._trust_beliefs['competence'] = np.clip(self._trust_beliefs['competence'], -1, 1)
+
         print("Updated competence (Change: " + str(delta) + "). New value: " + str(self._trust_beliefs['competence']))
+
         self.writeCurrCsv(self._human_name, self._trust_beliefs, self._folder)
         self.writeLog(self._human_name, self._trust_beliefs, self._folder)
 
@@ -104,7 +96,7 @@ class CustomAgent(BaselineAgent):
         print("competence: ", trust_beliefs['competence'])
         print("willingness: ", trust_beliefs['willingness'])
 
-        with open(folder + '/beliefs/currentTrustBelief.csv', mode='w') as csv_file:
+        with open(folder + '/beliefs/currentTrustBelief.csv', mode='w', newline='') as csv_file:
             csv_writer = csv.writer(csv_file, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             csv_writer.writerow(['name', 'competence', 'willingness'])
             csv_writer.writerow([name, trust_beliefs['competence'], trust_beliefs['willingness']])
@@ -113,7 +105,7 @@ class CustomAgent(BaselineAgent):
     
     def writeLog(self, name, trust_beliefs, folder):
         # save log of how competence/willingness change
-        with open(folder + '/logs/logWillCom.csv', mode='a') as csv_file:
+        with open(folder + '/logs/logWillCom.csv', mode='a', newline='') as csv_file:
             csv_writer = csv.writer(csv_file, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             csv_writer.writerow([name, trust_beliefs['competence'], trust_beliefs['willingness']])
 
