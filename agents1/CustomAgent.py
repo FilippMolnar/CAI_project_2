@@ -1170,9 +1170,11 @@ class CustomAgent(BaselineAgent):
                         if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_MILD:
                             print("[Mild victim] Rescued together") # Assuming the game can't let you drop it outside goal
                             self._updateCompetence(1)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
                         elif self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_CRITICAL:
                             print("[Critical victim] Rescued together") # Assuming the game can't let you drop it outside goal
                             self._updateCompetence(2)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
                     self._waiting = False
                     if self._goal_vic not in self._collected_victims:
                         self._collected_victims.append(self._goal_vic)
