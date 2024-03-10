@@ -33,7 +33,7 @@ mild_victim_competence_threshold = -0.5
 critical_victim_competence_threshold = -0.9
 
 always_trust = False
-never_trust = False
+never_trust = True
 random_trust = False
 
 
@@ -68,6 +68,15 @@ class CustomAgent(BaselineAgent):
                     self._trust_willingness_interactions_count = 10
                     break
 
+        if always_trust:
+            self._trust_beliefs['willingness'] = 1
+            self._trust_beliefs['competence'] = 1
+        elif never_trust:
+            self._trust_beliefs['willingness'] = -1
+            self._trust_beliefs['competence'] = -1
+        elif random_trust:
+            self._trust_beliefs['willingness'] = random.uniform(-1, 1)
+            self._trust_beliefs['competence'] = random.uniform(-1, 1)
 
     def interpolWillingness(self, l, u):
         delta = u - l

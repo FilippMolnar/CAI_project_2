@@ -4,7 +4,7 @@ import csv
 # Example data
 
 humans={}
-name = 'eve'
+name = 'alice'
 with open('./logs/logWillCom.csv', mode='r') as f:
     reader = csv.reader(f) 
     for r in reader:
