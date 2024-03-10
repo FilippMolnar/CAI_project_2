@@ -51,6 +51,8 @@ class CustomAgent(BaselineAgent):
         with open(folder + '/beliefs/allTrustBeliefs.csv', mode='r') as f:
             reader = csv.reader(f) 
             for r in reader:
+                if len(r) <= 0:
+                    continue
                 row = r[0].split(';') 
                 if row[0] == name:
                     self._trust_beliefs['competence'] = float(row[1])
@@ -94,7 +96,7 @@ class CustomAgent(BaselineAgent):
         print("competence: ", trust_beliefs['competence'])
         print("willingness: ", trust_beliefs['willingness'])
 
-        with open(folder + '/beliefs/currentTrustBelief.csv', mode='w') as csv_file:
+        with open(folder + '/beliefs/currentTrustBelief.csv', mode='w', newline='') as csv_file:
             csv_writer = csv.writer(csv_file, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             csv_writer.writerow(['name', 'competence', 'willingness'])
             csv_writer.writerow([name, trust_beliefs['competence'], trust_beliefs['willingness']])
@@ -103,7 +105,7 @@ class CustomAgent(BaselineAgent):
     
     def writeLog(self, name, trust_beliefs, folder):
         # save log of how competence/willingness change
-        with open(folder + '/logs/logWillCom.csv', mode='a') as csv_file:
+        with open(folder + '/logs/logWillCom.csv', mode='a', newline='') as csv_file:
             csv_writer = csv.writer(csv_file, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             csv_writer.writerow([name, trust_beliefs['competence'], trust_beliefs['willingness']])
 
