@@ -510,6 +510,8 @@ class CustomAgent(BaselineAgent):
                         # HUMAN IGNORES FOR trust_answer_timeout
                         if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._answered == False and not self._remove and self._waiting and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= self.interpolWillingness(trust_answer_timeout_lower_bound, trust_answer_timeout_upper_bound):
                             # TRUST - Human ignored question. Lower willingness.
+                            print("Waiting for:")
+                            print((self._curr_tick - self._trust_ongoing_check[0]) * tick_duration)
                             print("[Big rock] Ignore question")
                             self._updateWillingness(-1)
                             self._trust_ongoing_check = OngoingTrustCheck.NONE
@@ -588,7 +590,7 @@ class CustomAgent(BaselineAgent):
                             # Update ongoing check
                             print("[Tree] Forced removal")
                             self._updateCompetence(0)
-                            self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_TREE)
+                            self._trust_ongoing_check = OngoingTrustCheck.NONE
 
                             self._answered = True
                             self._waiting = False
@@ -613,16 +615,19 @@ class CustomAgent(BaselineAgent):
                         # HUMAN IGNORES FOR trust_answer_timeout
                         if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._answered == False and not self._remove and self._waiting and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= self.interpolWillingness(trust_answer_timeout_lower_bound, trust_answer_timeout_upper_bound):
                             # TRUST - Human ignored question. Lower willingness.
-                            print("[Tree] Ignored question")
+                            print("Waiting for:")
+                            print((self._curr_tick - self._trust_ongoing_check[0]) * tick_duration)
+                            print("[Tree] Ignored question, forced removal")
                             self._updateWillingness(-1)
                             self._trust_ongoing_check = OngoingTrustCheck.NONE
 
-                            # IGNORED - Continue
                             self._answered = True
                             self._waiting = False
-                            # Add area to the to do list
-                            self._to_search.append(self._door['room_name'])
-                            self._phase = Phase.FIND_NEXT_GOAL
+                            self._send_message('Removing tree blocking ' + str(self._door['room_name']) + '.',
+                                            'RescueBot')
+                            self._phase = Phase.ENTER_ROOM
+                            self._remove = False
+                            return RemoveObject.__name__, {'object_id': info['obj_id']}
                         
                         # Determine the next area to explore if the human tells the agent not to remove the obstacle
                         if self.received_messages_content and self.received_messages_content[
@@ -699,17 +704,19 @@ class CustomAgent(BaselineAgent):
                         # HUMAN IGNORES FOR trust_answer_timeout
                         if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._answered == False and not self._remove and self._waiting and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= self.interpolWillingness(trust_answer_timeout_lower_bound, trust_answer_timeout_upper_bound):
                             # TRUST - Human ignored question. Lower willingness.
-                            print("[Small rock] Ignored question")
+                            print("Waiting for:")
+                            print((self._curr_tick - self._trust_ongoing_check[0]) * tick_duration)
+                            print("[Small rock] Ignored question, forced removal alone")
                             self._updateWillingness(-1)
                             self._trust_ongoing_check = OngoingTrustCheck.NONE
 
-                            # IGNORED - Continue
                             self._answered = True
                             self._waiting = False
-                            # Add area to the to do list
-                            self._to_search.append(self._door['room_name'])
-                            self._phase = Phase.FIND_NEXT_GOAL
-                            return None, {}
+                            self._send_message('Removing stones blocking ' + str(self._door['room_name']) + '.',
+                                              'RescueBot')
+                            self._phase = Phase.ENTER_ROOM
+                            self._remove = False
+                            return RemoveObject.__name__, {'object_id': info['obj_id']}
 
                         # HUMAN DID NOT ARRIVE IN TIME
                         if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_SMALL_ROCK and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= self.interpolWillingness(trust_arrive_timeout_lower_bound, trust_arrive_timeout_upper_bound):
@@ -1065,20 +1072,25 @@ class CustomAgent(BaselineAgent):
                     # HUMAN IGNORED QUESTION - MILD
                     if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._trust_ongoing_check[2] == OngoingTrustCheck.FOUND_RESCUE_MILD and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= self.interpolWillingness(trust_answer_timeout_lower_bound, trust_answer_timeout_upper_bound):
                         # TRUST - Human did not respond
-                        print("[Mild victim] Ignored question")
+                        print("Waiting for:")
+                        print((self._curr_tick - self._trust_ongoing_check[0]) * tick_duration)
+                        print("[Mild victim] Ignored question, forced rescue alone")
                         self._updateWillingness(-2)
                         self._trust_ongoing_check = OngoingTrustCheck.NONE
 
-                        # IGNORED - Continue
+                        self._rescue = 'alone'
                         self._answered = True
                         self._waiting = False
-                        self._todo.append(self._recent_vic)
+                        self._goal_vic = self._recent_vic
+                        self._goal_loc = self._remaining[self._goal_vic]
                         self._recent_vic = None
-                        self._phase = Phase.FIND_NEXT_GOAL
+                        self._phase = Phase.PLAN_PATH_TO_VICTIM
 
                     # HUMAN IGNORED QUESTION - CRITICAL
                     if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._trust_ongoing_check[2] == OngoingTrustCheck.FOUND_RESCUE_CRITICAL and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= self.interpolWillingness(trust_answer_timeout_lower_bound, trust_answer_timeout_upper_bound):
                         # TRUST - Human did not respond
+                        print("Waiting for:")
+                        print((self._curr_tick - self._trust_ongoing_check[0]) * tick_duration)
                         print("[Critical victim] Ignored question")
                         self._updateWillingness(-4)
                         self._trust_ongoing_check = OngoingTrustCheck.NONE
