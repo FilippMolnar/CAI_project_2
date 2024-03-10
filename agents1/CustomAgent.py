@@ -496,7 +496,7 @@ class CustomAgent(BaselineAgent):
                         if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._answered == False and not self._remove and self._waiting and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= self.interpolWillingness(trust_answer_timeout_lower_bound, trust_answer_timeout_upper_bound):
                             # TRUST - Human ignored question. Lower willingness.
                             print("[Big rock] Ignore question")
-                            self._updateWillingness(-2)
+                            self._updateWillingness(-1)
                             self._trust_ongoing_check = OngoingTrustCheck.NONE
 
                             # IGNORED - Continue
@@ -599,7 +599,7 @@ class CustomAgent(BaselineAgent):
                         if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._answered == False and not self._remove and self._waiting and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= self.interpolWillingness(trust_answer_timeout_lower_bound, trust_answer_timeout_upper_bound):
                             # TRUST - Human ignored question. Lower willingness.
                             print("[Tree] Ignored question")
-                            self._updateWillingness(-2)
+                            self._updateWillingness(-1)
                             self._trust_ongoing_check = OngoingTrustCheck.NONE
 
                             # IGNORED - Continue
@@ -871,7 +871,7 @@ class CustomAgent(BaselineAgent):
                                         self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_RESCUE_MILD)
                                     else:
                                         self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_RESCUE_CRITICAL)
-                                    self._updateCompetence(1)
+                                    self._updateCompetence(3)
 
                                     # Add the area to the list with searched areas
                                     if self._door['room_name'] not in self._searched_rooms:
