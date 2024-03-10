@@ -61,7 +61,11 @@ class CustomAgent(BaselineAgent):
                 row = r[0].split(';') 
                 if row[0] == name:
                     self._trust_beliefs['competence'] = float(row[1])
+                    self._trust_competence_total = int(float(row[1])*10)
+                    self._trust_competence_interactions_count = 10
                     self._trust_beliefs['willingness'] = float(row[2])
+                    self._trust_willingness_total = int(float(row[2])*10)
+                    self._trust_willingness_interactions_count = 10
                     break
 
 
