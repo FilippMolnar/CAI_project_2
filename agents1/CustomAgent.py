@@ -147,10 +147,10 @@ class CustomAgent(BaselineAgent):
                             self._updateCompetence(-1)
                         if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_MILD:
                             print("[Mild victim] Cancelled cooperation")
-                            self._updateCompetence(-2)
+                            self._updateCompetence(-1)
                         if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_CRITICAL:
                             print("[Critical victim] Cancelled cooperation")
-                            self._updateCompetence(-4)
+                            self._updateCompetence(-2)
 
             self._trust_processed_messages = len(receivedMessages)
 
@@ -863,7 +863,7 @@ class CustomAgent(BaselineAgent):
                                         self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_RESCUE_MILD)
                                     else:
                                         self._trust_ongoing_check = (self._curr_tick, self._door['room_name'], OngoingTrustCheck.WAITING_RESCUE_CRITICAL)
-                                    self._updateCompetence(3)
+                                    self._updateCompetence(2)
 
                                     # Add the area to the list with searched areas
                                     if self._door['room_name'] not in self._searched_rooms:
