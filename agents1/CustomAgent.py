@@ -145,7 +145,7 @@ class CustomAgent(BaselineAgent):
                 elif msg.startswith('Remove:'):
                     # Identify at which location the human needs help
                     area = msg.split()[-1]
-                    # HUMAN ASKING FOR HELP - REVERT TRUST IMPROVEMENTS FROM ONGOING AGREEMENTS
+                    # HUMAN ASKING FOR HELP - CANCELLING ONGOING COOPERATION
                     if self._trust_ongoing_check != OngoingTrustCheck.NONE:
                         if self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_SMALL_ROCK:
                             print("[Small rock] Cancelled cooperation")
@@ -1132,7 +1132,6 @@ class CustomAgent(BaselineAgent):
                         if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_MILD and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= self.interpolWillingness(trust_arrive_timeout_lower_bound, trust_arrive_timeout_upper_bound):
                             # TRUST - Human did not arrive
                             print("[Mild victim] Did not arrive or act in time")
-                            self._updateWillingness(-1)
                             self._updateCompetence(-1)
                             self._trust_ongoing_check = OngoingTrustCheck.NONE
 
@@ -1152,7 +1151,6 @@ class CustomAgent(BaselineAgent):
                         if self._trust_ongoing_check != OngoingTrustCheck.NONE and self._trust_ongoing_check[2] == OngoingTrustCheck.WAITING_RESCUE_CRITICAL and (self._curr_tick - self._trust_ongoing_check[0]) * tick_duration >= self.interpolWillingness(trust_arrive_timeout_lower_bound, trust_arrive_timeout_upper_bound):
                             # TRUST - Human did not arrive
                             print("[Critical victim] Did not arrive or act in time")
-                            self._updateWillingness(-2)
                             self._updateCompetence(-2)
                             self._trust_ongoing_check = OngoingTrustCheck.NONE
 
