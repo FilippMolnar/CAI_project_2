@@ -81,7 +81,10 @@ class CustomAgent(BaselineAgent):
         # Clip values between -1 and 1
         self._trust_beliefs['willingness'] = np.clip(self._trust_beliefs['willingness'], -1, 1)
         print("Updated willingness (Change: " + str(delta) + "). New value: " + str(self._trust_beliefs['willingness']))
+        
         self.writeCurrCsv(self._human_name, self._trust_beliefs, self._folder)
+        self.writeLog(self._human_name, self._trust_beliefs, self._folder)
+
 
     def _updateCompetence(self, delta: int):
         self._trust_competence_total += delta
@@ -93,6 +96,7 @@ class CustomAgent(BaselineAgent):
         self._trust_beliefs['competence'] = np.clip(self._trust_beliefs['competence'], -1, 1)
         print("Updated competence (Change: " + str(delta) + "). New value: " + str(self._trust_beliefs['competence']))
         self.writeCurrCsv(self._human_name, self._trust_beliefs, self._folder)
+        self.writeLog(self._human_name, self._trust_beliefs, self._folder)
 
     def writeCurrCsv(self, name, trust_beliefs, folder):
         # Save current trust belief values so we can later use and retrieve them to add to a csv file with all the logged trust belief values
@@ -107,6 +111,14 @@ class CustomAgent(BaselineAgent):
 
         return trust_beliefs
     
+    def writeLog(self, name, trust_beliefs, folder):
+        # save log of how competence/willingness change
+        with open(folder + '/logs/logWillCom.csv', mode='a') as csv_file:
+            csv_writer = csv.writer(csv_file, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            csv_writer.writerow([name, trust_beliefs['competence'], trust_beliefs['willingness']])
+
+        return trust_beliefs
+
     def _trustBelief(self, members, trustBeliefs, folder, receivedMessages):
         # Process new messages
         if len(receivedMessages) > self._trust_processed_messages: # New messages received
