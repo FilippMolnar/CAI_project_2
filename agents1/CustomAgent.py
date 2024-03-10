@@ -1,4 +1,5 @@
 from agents1.OfficialAgent import *
+import random
 
 
 class OngoingTrustCheck(enum.Enum):
@@ -31,6 +32,10 @@ big_rock_competence_threshold = -0.75
 mild_victim_competence_threshold = -0.5
 critical_victim_competence_threshold = -0.9
 
+always_trust = False
+never_trust = False
+random_trust = False
+
 
 class CustomAgent(BaselineAgent):
 
@@ -49,7 +54,7 @@ class CustomAgent(BaselineAgent):
         self._trust_beliefs['competence'] = 0
         self._trust_beliefs['willingness'] = 0
         with open(folder + '/beliefs/allTrustBeliefs.csv', mode='r') as f:
-            reader = csv.reader(f) 
+            reader = csv.reader(f)
             for r in reader:
                 if len(r) <= 0:
                     continue
@@ -66,29 +71,43 @@ class CustomAgent(BaselineAgent):
         return l + d*delta
 
     def _updateWillingness(self, delta: int):
-        self._trust_willingness_total += delta
-        self._trust_willingness_interactions_count += abs(delta) # To properly calculate weighted average
+        if always_trust:
+            self._trust_beliefs['willingness'] = 1
+        elif never_trust:
+            self._trust_beliefs['willingness'] = -1
+        elif random_trust:
+            self._trust_beliefs['willingness'] = random.uniform(-1, 1)
+        else:
+            self._trust_willingness_total += delta
+            self._trust_willingness_interactions_count += abs(delta) # To properly calculate weighted average
 
-        # Update willingness using the new weighted average
-        self._trust_beliefs['willingness'] = 0 if self._trust_willingness_interactions_count == 0 else (self._trust_willingness_total / self._trust_willingness_interactions_count)
+            # Update willingness using the new weighted average
+            self._trust_beliefs['willingness'] = 0 if self._trust_willingness_interactions_count == 0 else (self._trust_willingness_total / self._trust_willingness_interactions_count)
 
-        print("Updated willingness (Change: " + str(delta) + "). New value: " + str(self._trust_beliefs['willingness']))
-        
-        self.writeCurrCsv(self._human_name, self._trust_beliefs, self._folder)
-        self.writeLog(self._human_name, self._trust_beliefs, self._folder)
+            print("Updated willingness (Change: " + str(delta) + "). New value: " + str(self._trust_beliefs['willingness']))
+            
+            self.writeCurrCsv(self._human_name, self._trust_beliefs, self._folder)
+            self.writeLog(self._human_name, self._trust_beliefs, self._folder)
 
 
     def _updateCompetence(self, delta: int):
-        self._trust_competence_total += delta
-        self._trust_competence_interactions_count += abs(delta) # To properly calculate weighted average
+        if always_trust:
+            self._trust_beliefs['competence'] = 1
+        elif never_trust:
+            self._trust_beliefs['competence'] = -1
+        elif random_trust:
+            self._trust_beliefs['competence'] = random.uniform(-1, 1)
+        else:
+            self._trust_competence_total += delta
+            self._trust_competence_interactions_count += abs(delta) # To properly calculate weighted average
 
-        # Update competence using the new weighted average
-        self._trust_beliefs['competence'] = 0 if self._trust_competence_interactions_count == 0 else (self._trust_competence_total / self._trust_competence_interactions_count)
+            # Update competence using the new weighted average
+            self._trust_beliefs['competence'] = 0 if self._trust_competence_interactions_count == 0 else (self._trust_competence_total / self._trust_competence_interactions_count)
 
-        print("Updated competence (Change: " + str(delta) + "). New value: " + str(self._trust_beliefs['competence']))
+            print("Updated competence (Change: " + str(delta) + "). New value: " + str(self._trust_beliefs['competence']))
 
-        self.writeCurrCsv(self._human_name, self._trust_beliefs, self._folder)
-        self.writeLog(self._human_name, self._trust_beliefs, self._folder)
+            self.writeCurrCsv(self._human_name, self._trust_beliefs, self._folder)
+            self.writeLog(self._human_name, self._trust_beliefs, self._folder)
 
     def writeCurrCsv(self, name, trust_beliefs, folder):
         # Save current trust belief values so we can later use and retrieve them to add to a csv file with all the logged trust belief values
