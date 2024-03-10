@@ -50,8 +50,17 @@ class CustomAgent(BaselineAgent):
         self._trust_all_zones_marked_visited = False # When the robot has to search zones again even though human said everything is searched, start counting wrongly marked zones
         self._trust_zones_wrongly_marked_as_searched = []
         self._curr_tick = 0
-        self._trust_beliefs['willingness'] = 0
         self._trust_beliefs['competence'] = 0
+        self._trust_beliefs['willingness'] = 0
+        with open(folder + '/beliefs/allTrustBeliefs.csv', mode='r') as f:
+            reader = csv.reader(f) 
+            for r in reader:
+                row = r[0].split(';') 
+                if row[0] == name:
+                    self._trust_beliefs['competence'] = float(row[1])
+                    self._trust_beliefs['willingness'] = float(row[2])
+                    break
+
         """
         Inherited fields (reminder for development)
 
